@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TKEO Bench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-screen bench: the corpus on the left, the sample and its pickers' lanes in the middle,
+   tkeo.h's constants on the right (a phone: stacked, sample first) */
+:root {
+  --bg: #e9ecf0; --panel: #f7f8fa; --ink: #19202b; --dim: #5b6676; --line: #d3d9e1; --hi: #dfe5ee;
+  --wave: #7b8aa1; --env: #b7790f; --avg: #b8a07c; --mark: #19202b; --play: #19202b;
+  --l-peaks: #5d6878; --l-env: #c8532b; --l-grid: #11806f; --l-rand: #6a4bd0; --l-live: #2366ad; --l-thr: #b8325c;
+  --accent: #c8532b;
+  --f-display: "Chakra Petch", "Bahnschrift", "DIN Alternate", system-ui, sans-serif;
+  --f-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1217; --panel: #161a21; --ink: #e2e6ed; --dim: #8c96a6; --line: #29303b; --hi: #212835;
+  --wave: #6c7d98; --env: #e6b54e; --avg: #7d6847; --mark: #e2e6ed; --play: #ffffff;
+  --l-peaks: #9aa4b4; --l-env: #f07a52; --l-grid: #3cc1ab; --l-rand: #a68cff; --l-live: #5ea6f0; --l-thr: #ec6f96;
+  --accent: #f07a52; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1217; --panel: #161a21; --ink: #e2e6ed; --dim: #8c96a6; --line: #29303b; --hi: #212835;
+  --wave: #6c7d98; --env: #e6b54e; --avg: #7d6847; --mark: #e2e6ed; --play: #ffffff;
+  --l-peaks: #9aa4b4; --l-env: #f07a52; --l-grid: #3cc1ab; --l-rand: #a68cff; --l-live: #5ea6f0; --l-thr: #ec6f96;
+  --accent: #f07a52; color-scheme: dark }
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 13px/1.4 var(--f-ui); }
+* { box-sizing: border-box; }
+button, select, input { font: inherit; color: inherit; }
+button { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--dim); }
+button:focus-visible, select:focus-visible, input:focus-visible, .file:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+select { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; }
+
+.app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 10px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+h1 { font: 600 18px/1 var(--f-display); letter-spacing: 0.06em; text-transform: uppercase; margin: 0; }
+h1 span { color: var(--accent); }
+.now { font-family: var(--f-mono); font-size: 12px; color: var(--dim); min-width: 0; overflow-wrap: anywhere; flex: 1 1 260px; }
+.now b { color: var(--ink); font-weight: 500; }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.tools label.btn { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+.tools label.btn:hover { border-color: var(--dim); }
+.tools input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+.main { display: grid; grid-template-columns: 236px minmax(0, 1fr) 300px; gap: 10px; min-height: 0; }
+.pane { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; min-height: 0; }
+.pane h2 { font: 600 11px/1 var(--f-display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); margin: 0; }
+
+.files { overflow: auto; padding: 10px 6px 10px 10px; display: flex; flex-direction: column; gap: 10px; }
+.cat { display: flex; flex-direction: column; gap: 1px; }
+.cat h2 { display: flex; justify-content: space-between; padding: 0 4px 4px 2px; }
+.cat h2 i { font-style: normal; font-family: var(--f-mono); letter-spacing: 0; }
+.file { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; text-align: left; border: 0; background: none; padding: 3px 4px; border-radius: 3px; cursor: pointer; }
+.file:hover { background: var(--hi); }
+.file.on { background: var(--hi); box-shadow: inset 2px 0 0 var(--accent); }
+.file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.file i { font-style: normal; font-family: var(--f-mono); font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.hint { color: var(--dim); font-size: 12px; margin: 0; }
+.hint kbd { font-family: var(--f-mono); font-size: 11px; border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; }
+
+.center { display: grid; grid-template-rows: minmax(280px, 1fr) auto auto; gap: 8px; min-height: 0; min-width: 0; }
+.stage { position: relative; overflow: hidden; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.status { font-family: var(--f-mono); font-size: 11px; color: var(--dim); min-height: 1.4em; overflow-wrap: anywhere; }
+.lanes { overflow-x: auto; }
+.tolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 8px 2px; font-size: 12px; color: var(--dim); }
+.tolbar input { width: 140px; accent-color: var(--accent); }
+.tolbar output { font-family: var(--f-mono); font-size: 11px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th { font: 600 10px/1 var(--f-display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+td { padding: 4px 8px; text-align: right; font-family: var(--f-mono); font-size: 12px; white-space: nowrap; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--hi); }
+tbody tr.on { background: var(--hi); }
+td.ln { font: 600 12px/1 var(--f-display); letter-spacing: 0.06em; }
+td.ln::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; background: var(--c); vertical-align: -1px; }
+td.d { color: var(--dim); font-family: var(--f-ui); text-align: left; white-space: normal; min-width: 180px; }
+
+.params { overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.grp { display: flex; flex-direction: column; gap: 9px; padding: 10px 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+.grp h2 { color: var(--ink); font-size: 12px; }
+.grp .note { margin-top: -4px; }
+.grp-in { display: flex; flex-direction: column; gap: 9px; margin-top: 9px; }
+details.more summary { display: flex; justify-content: space-between; align-items: center; cursor: pointer; list-style: none; }
+details.more summary::-webkit-details-marker { display: none; }
+details.more summary h2::before { content: "▸ "; color: var(--dim); }
+details.more[open] summary h2::before { content: "▾ "; }
+
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto 22px; align-items: center; gap: 2px 6px; }
+.row label { font-size: 12px; }
+.row output { font-family: var(--f-mono); font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; text-align: right; }
+.row input[type=range] { grid-column: 1 / 3; width: 100%; margin: 0; accent-color: var(--accent); }
+.row .rst { grid-row: 1 / 3; grid-column: 3; padding: 0; width: 22px; height: 22px; font-size: 12px; line-height: 1; visibility: hidden; }
+.row.mod label { color: var(--accent); font-weight: 600; }
+.row.mod .rst { visibility: visible; }
+.gridline { font-size: 12px; }
+.gridline output { font-family: var(--f-mono); font-size: 11px; color: var(--accent); }
+.row label.auto { grid-column: 1 / 3; font-size: 11px; color: var(--dim); display: flex; gap: 6px; align-items: center; }
+.row input[type=range]:disabled { opacity: 0.55; }
+.inline { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.seg { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.seg > span { color: var(--dim); font-size: 11px; }
+.seg label { display: flex; gap: 6px; align-items: center; }
+.seg small { color: var(--dim); }
+.seg input { accent-color: var(--accent); margin: 0; }
+
+pre { font-family: var(--f-mono); font-size: 11px; line-height: 1.45; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 8px; margin: 0; overflow-x: auto; user-select: all; }
+.note { font-size: 11px; color: var(--dim); margin: 0; }
+
+@media (max-width: 1080px) {
+  html, body { height: auto; }
+  .app { height: auto; }
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .center { order: 1; grid-template-rows: 62vh auto auto; }
+  .params { order: 2; }
+  .files { order: 3; max-height: 320px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+<style>:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); } body { margin: 0; } [hidden] { display: none !important; }</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>TKEO <span>Bench</span></h1>
+    <div class="now" id="now">Loading the detector…</div>
+    <div class="tools">
+      <label class="btn" for="pick-dir">Open folder</label><input type="file" id="pick-dir" webkitdirectory multiple>
+      <label class="btn" for="pick-files">Open files</label><input type="file" id="pick-files" accept="audio/*,.wav,.aif,.aiff,.flac,.mp3,.ogg" multiple>
+      <button id="scan" type="button" title="Analyse every loaded file with the current constants">Scan all</button>
+      <button id="playall" type="button" title="Play what is in view (Space)">Play</button>
+      <button id="zoomout" type="button" title="Whole sample (0)">Whole</button>
+    </div>
+  </header>
+  <div class="main">
+    <aside class="pane files" id="files"></aside>
+    <section class="center">
+      <div class="pane stage" id="stage"><canvas id="cv"></canvas></div>
+      <div class="status" id="status"></div>
+      <div class="pane lanes">
+        <div class="tolbar"><label for="p-tol">Scored against your marks within</label><input type="range" id="p-tol" min="1" max="60" step="1" value="15"><output id="o-tol"></output></div>
+        <table>
+          <thead><tr><th>Lane</th><th>Cuts</th><th>Hit</th><th>Precision</th><th>Recall</th><th>Offset</th><th>What it is</th></tr></thead>
+          <tbody id="lanes"></tbody>
+        </table>
+      </div>
+    </section>
+    <aside class="pane params" id="params">
+      <div class="grp">
+        <h2>Slicing</h2>
+        <p class="note">The detector keeps every transient (at most 64). Each of the three pickers chooses that many slices from them: turn Slices to thin or add them live, below 0 in each picker's order reversed. The lanes show all three at once.</p>
+        <div class="gridline" id="r-n">Found: <output id="o-n"></output></div>
+        <div class="row" id="r-live"><label for="p-live">Slices (below 0 the order reversed)</label><output id="o-live"></output><input type="range" id="p-live" min="1" max="64" step="1" value="8"></div>
+        <div class="inline">
+          <button id="reroll" type="button" title="A new RAND roll (R)">Reroll</button></div>
+      </div>
+      <div class="grp" id="g-count"><h2>The detector</h2>
+        <p class="note">What counts as a hit. Too many peaks: raise the hysteresis, lower the cutoff, or widen the gap. Watch the dots on the envelope and the count up top. Where each cut lands follows by itself.</p>
+        <div class="seg" role="radiogroup" aria-label="Where a cut goes">
+          <span>Cut at</span>
+          <label><input type="radio" name="onset" id="on-walk" value="0" checked> where the hit starts to rise</label>
+          <label><input type="radio" name="onset" id="on-peak" value="1"> the dot (the envelope's top)</label>
+        </div></div>
+      <div class="grp">
+        <h2>Constants</h2>
+        <div class="inline"><button id="copy" type="button">Copy constants</button><button id="resetall" type="button">Defaults</button><button id="copymarks" type="button">Copy marks</button></div>
+        <pre id="snippet"></pre>
+        <p class="note">The three dials and the onset delay that follows them; the rest are fixed. A changed line shows its default beside it. Marks stay in this browser; Copy marks gives them as JSON.</p>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script type="module">
+const WASM = "AGFzbQEAAAABaQ9gAABgBX9/f39/AGACf38Bf2ABfwBgBX9/f39/AX9gCX9/f39/f39/fwF/YAd/f39/f39/AGAGf39/f39/AGAEf39/fwF9YAN/f38Bf2ACf30AYAF/AX1gAX8Bf2AAAX9gBH9/f38BfwMfHgABAgMEBQYHCAkJAwoLAAwNDQ0NDQ0NAgkMDg0NDQUGAQGABoAIBrwBGX8BQaCE5wkLfwBB5KfJAAt/AEHIp8kAC38AQdCnyQALfwBBzKfJAAt/AEHUp8kAC38AQfinyQALfwBB3KfJAAt/AEHgp8kAC38AQdinyQALfwBB6KfJAAt/AEHsp8kAC38AQfCnyQALfwBB9KfJAAt/AEGACAt/AEGACAt/AEGghOMJC38AQaCE4wkLfwBBoITnCQt/AEGACAt/AEGghOcJC38AQYCAgBgLfwBBAAt/AEEBC38AQYCABAsHuwU2Bm1lbW9yeQIAEV9fd2FzbV9jYWxsX2N0b3JzAAAHdGtfaW5pdAABCnRrX3RfZGVsYXkDAQZ0a19ydW4AAgp0a190X3N2Zl9nAwIQdGtfdF9zdmZfaW52X2RlbgMDDHRrX3Rfc3ZmX251bQMECnRrX3RfZmxvb3IDBQ90a190X29uc2V0X3BlYWsDBgx0a190X29uX2ZyYWMDBwt0a190X3ZhbGxleQMICHR3X3RyYWNlAAsJdGtfdF9oeXN0AwkMdGtfdF96Y19iYWNrAwoLdGtfdF96Y19md2QDCwt0a19ncmlkX21heAAECHRrX3RfZ2FwAwwMdGtfdF9lbmRfZ2FwAw0MdGtfZ3JpZF9tb2RlAAUNdGtfY2FjaGVfZmlsbAAGD3RrX2NhY2hlX3JlZ2lvbgAHBnRrX3RybgAIBm1lbXNldAAJBm1lbWNweQAKBnR3X3NldAAMCnR3X2RlZmF1bHQADQZ0d19kZWYDDgh0d19yZXNldAAOBnR3X3BjbQAPB3R3X21heG4AEAZ0d19kZWMAEQZ0d19lbnYAEgV0d19ldgATBnR3X291dAAUCHR3X2NvdW50ABUJdHdfbWF4X2V2ABYKdHdfYW5hbHl6ZQAXB3R3X2dyaWQAGAt0d19ncmlkX21heAAZB3R3X2xpdmUAGgp0d19jYWNoZV9tABsKdHdfY2FsX2J1ZgAcDHR3X2NhbGlicmF0ZQAdDF9fZHNv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JICAgIAAIAMLCwBBACgCrJ3giQALCABBuL3giQALogEBAn9BACgC7KfJgAAhAEEAQQA2AuynyYAAQQAoAuinyYAAIQFBAEEANgLop8mAAEHAveKJAEG4veCJAEEAQYCAAUGg/uKJABCBgICAAEEAQQA2AtC94okAA0BBwL3iiQBBgCAQgoCAgABFDQALQQAgADYC7KfJgABBACABNgLop8mAAEEAKAKg/uKJAEGAYGpB4PJ5QQAoAoy+4okAQQBKGwsLOwEAQYAICzTAhds6cBsAQAclfz+sxSc316MwP83MTD1mZoY/AADmQgAA8EMAAHBDAACKRAAAFkUAAAAAAPYCBG5hbWUACwp0a3dlYi53YXNtAcECHgARX193YXNtX2NhbGxfY3RvcnMBB3RrX2luaXQCBnRrX3J1bgMJdGtfY29tbWl0BAt0a19ncmlkX21heAUMdGtfZ3JpZF9tb2RlBg10a19jYWNoZV9maWxsBw90a19jYWNoZV9yZWdpb24IBnRrX3RybgkGbWVtc2V0CgZtZW1jcHkLCHR3X3RyYWNlDAZ0d19zZXQNCnR3X2RlZmF1bHQOCHR3X3Jlc2V0DwZ0d19wY20QB3R3X21heG4RBnR3X2RlYxIGdHdfZW52EwV0d19ldhQGdHdfb3V0FQh0d19jb3VudBYJdHdfbWF4X2V2Fwp0d19hbmFseXplGAd0d19ncmlkGQt0d19ncmlkX21heBoHdHdfbGl2ZRsKdHdfY2FjaGVfbRwKdHdfY2FsX2J1Zh0MdHdfY2FsaWJyYXRlBxIBAA9fX3N0YWNrX3BvaW50ZXIJCgEABy5yb2RhdGEAOAlwcm9kdWNlcnMBDHByb2Nlc3NlZC1ieQEMVWJ1bnR1IGNsYW5nETIxLjEuOCAoNnVidW50dTEpAJQBD3RhcmdldF9mZWF0dXJlcwgrC2J1bGstbWVtb3J5Kw9idWxrLW1lbW9yeS1vcHQrFmNhbGwtaW5kaXJlY3Qtb3ZlcmxvbmcrCm11bHRpdmFsdWUrD211dGFibGUtZ2xvYmFscysTbm9udHJhcHBpbmctZnB0b2ludCsPcmVmZXJlbmNlLXR5cGVzKwhzaWduLWV4dA==";
+const SR = 48000;
+const $ = (s) => document.querySelector(s);
+
+/* ---------- the detector (tkeo.c, compiled to WebAssembly) ---------- */
+const X = (await WebAssembly.instantiate(Uint8Array.from(atob(WASM), (c) => c.charCodeAt(0)), {})).instance.exports;
+const MEM = X.memory.buffer, I32 = new Int32Array(MEM), F32 = new Float32Array(MEM);
+const MAXN = X.tw_maxn(), DEC = X.tw_dec(), MAXEV = X.tw_max_ev();
+const PL = new Int16Array(MEM, X.tw_pcm(0), MAXN), PR = new Int16Array(MEM, X.tw_pcm(1), MAXN);
+const NAMES = ["TK_SVF_G", "TK_SVF_NUM", "TK_SVF_INV_DEN", "TK_FLOOR", "TK_HYST", "TK_ON_FRAC", "TK_VALLEY",
+  "TK_DELAY", "TK_ZC_BACK", "TK_ZC_FWD", "TK_GAP", "TK_END_GAP", "TK_ONSET_PEAK"];
+const K = { floor: 3, hyst: 4, delay: 7, gap: 10, egap: 11, peak: 12 };
+const PICK_ONLY = new Set([K.gap, K.egap]);   /* the rest change the stored peaks */
+const DEF = NAMES.map((_, k) => X.tw_default(k));
+let raw = DEF.slice();
+
+const svf = (g, num) => ({ fc: Math.atan(g) * 2 / Math.PI * (SR / 2), q: 1 / (num - g) });
+const svfRaw = (fc, q) => { const g = Math.tan(Math.PI / 2 * fc / (SR / 2)), r = 1 / (2 * q); return [g, 2 * r + g, 1 / (1 + 2 * r * g + g * g)]; };
+const same = (a, b) => Math.abs(a - b) <= Math.abs(b) * 1e-6;
+const smp = (v) => `${Math.round(v)} · ${(v / 48).toFixed(1)} ms`;
+
+const CTRL = [
+  { id: "fc", grp: "count", label: "Follower cutoff", ks: [0, 1, 2], min: 4, max: 400, log: true,
+    get: () => svf(raw[0], raw[1]).fc, set: (v) => { const q = svf(raw[0], raw[1]).q; [raw[0], raw[1], raw[2]] = svfRaw(v, q); }, fmt: (v) => `${v.toFixed(1)} Hz` },
+  { id: "q", grp: "more", label: "Follower Q", ks: [0, 1, 2], min: 0.3, max: 3, step: 0.01,
+    get: () => svf(raw[0], raw[1]).q, set: (v) => { const fc = svf(raw[0], raw[1]).fc; [raw[0], raw[1], raw[2]] = svfRaw(fc, v); }, fmt: (v) => v.toFixed(2) },
+  { id: "floor", grp: "more", label: "Silence floor", ks: [3], min: 1e-10, max: 1e-2, log: true, fmt: (v) => v.toExponential(1) },
+  { id: "hyst", grp: "count", label: "Hysteresis", ks: [4], min: 0, max: 0.95, step: 0.01, fmt: (v) => `${(v * 100).toFixed(0)} %` },
+  { id: "on", grp: "more", label: "Onset fraction", ks: [5], min: 0, max: 0.5, step: 0.005, fmt: (v) => `${(v * 100).toFixed(1)} %` },
+  { id: "valley", grp: "more", label: "Valley rise", ks: [6], min: 1, max: 2, step: 0.005, fmt: (v) => `${((v - 1) * 100).toFixed(1)} %` },
+  { id: "delay", grp: "more", label: "Onset delay", auto: true, ks: [7], min: 0, max: 480, step: 1, fmt: smp },
+  { id: "zcb", grp: "more", label: "Zero crossing, back", ks: [8], min: 0, max: 2400, step: 1, fmt: smp },
+  { id: "zcf", grp: "more", label: "Zero crossing, ahead", ks: [9], min: 0, max: 2400, step: 1, fmt: smp },
+  { id: "gap", grp: "count", label: "Least gap between cuts", ks: [10], min: 0, max: 9600, step: 24, fmt: smp },
+  { id: "egap", grp: "more", label: "End gap", ks: [11], min: 0, max: 24000, step: 48, fmt: smp },
+];
+for (const c of CTRL) if (!c.get) { const k = c.ks[0]; c.get = () => raw[k]; c.set = (v) => { raw[k] = k >= K.delay ? Math.round(v) : v; }; }
+
+/* the onset delay, automatic: the default TK_DELAY moved by as much as the follower's lag moves, measured
+   the way tkslice --calibrate measures it (a synthetic hit through the same C) */
+let autoDelay = true;
+{
+  const b = new Int16Array(MEM, X.tw_cal_buf(), 16384);
+  for (let j = 0; j < 16384; j++) {
+    let y = 0;
+    if (j >= 4096) { const d = j - 4096, env = d < 1 ? d : Math.exp(-(d - 1) / (0.06 * SR)); y = 0.5 * env * Math.sin(2 * Math.PI * 2000 * d / SR); }
+    b[j] = Math.round(y * 32767);
+  }
+}
+const calibrate = () => { raw.forEach((v, k) => X.tw_set(k, v)); return X.tw_calibrate(); };
+const CAL_DEF = calibrate();
+function applyAuto() {
+  if (raw[K.peak]) { raw[K.delay] = DEF[K.delay]; return; }   /* (at the dot: the dot as drawn) */
+  if (!autoDelay) return;
+  const c = calibrate();
+  raw[K.delay] = c > -100000 ? Math.max(0, DEF[K.delay] + c - CAL_DEF) : DEF[K.delay];
+}   /* raw[0..10] change the stored peaks; the rest only the pickers */
+
+/* ---------- state ---------- */
+const files = [];          /* {name, path, cat, file | synth, stats} */
+let cur = null;            /* {entry, n, stereo, L, R, buf} */
+const cache = new Map();   /* path -> decoded, the last few */
+let ev = [], envT = null, lanes = [], focus = "env", ms = 0, anaVer = 0, themeVer = 0;
+let seed = 1;              /* RAND's seed; its first grid bumps it */
+const bump = (s) => (Math.imul(s, 747796405) + 2891336453) >>> 0;
+seed = bump(seed);
+let view = { a: 0, b: 1 }, hover = null, play = null;
+const P = { n: 64, nMax: 64, live: 64, liveWant: 64, tol: 15 };
+
+/* the three pickers, each at the Slices count (tk_cache_region): a trig's brightness is its transient's
+   height */
+const LANES = [
+  { id: "env", mode: 1, name: "VOL", c: "--l-env", d: "The start, then the Slices - 1 loudest transients" },
+  { id: "grid", mode: 2, name: "GRID", c: "--l-grid", d: "Slices even targets, each to the nearest transient" },
+  { id: "rand", mode: 3, name: "RAND", c: "--l-rand", d: "The start, then Slices - 1 transients at random (Reroll: R)" },
+];
+
+/* ---------- analysis and picking ---------- */
+function analyse() {
+  if (!cur) return;
+  raw.forEach((v, k) => X.tw_set(k, v));
+  const t0 = performance.now();
+  const c = X.tw_analyze(cur.n, cur.stereo ? 1 : 0);
+  ms = performance.now() - t0;
+  const p = X.tw_ev() >> 2;
+  ev = new Array(c);
+  for (let k = 0; k < c; k++) ev[k] = { pos: I32[p + 3 * k], peak: I32[p + 3 * k + 1], value: F32[p + 3 * k + 2] };   /* (tk_event: 12 B) */
+  const nb = Math.ceil(cur.n / DEC) + 1;
+  envT = F32.slice(X.tw_env() >> 2, (X.tw_env() >> 2) + nb);
+  anaVer++;
+  limitSlices();
+  pick();
+}
+const outs = (m) => Array.from(I32.subarray(X.tw_out() >> 2, (X.tw_out() >> 2) + m));
+function pick() {
+  if (!cur) return;
+  raw.forEach((v, k) => X.tw_set(k, v));
+  lanes = LANES.map((l) => ({ ...l, cuts: outs(X.tw_live(l.mode, P.live, P.n, seed)) }));
+  renderLanes();
+  renderNow();
+  draw();
+}
+
+/* hits against the marks (the start, frame 0, left out: every grid has it) */
+function score(cuts, marks) {
+  const tol = P.tol * SR / 1000, cs = cuts.filter((c) => c > 0);
+  if (!marks.length) return null;
+  const used = new Set();
+  let hit = 0, off = 0;
+  for (const m of marks) {
+    let best = -1, bd = tol + 1;
+    cs.forEach((c, i) => { const d = Math.abs(c - m); if (d <= tol && d < bd && !used.has(i)) { bd = d; best = i; } });
+    if (best >= 0) { used.add(best); hit++; off += cs[best] - m; }
+  }
+  return { hit, p: cs.length ? hit / cs.length : 0, r: hit / marks.length, off: hit ? off / hit / 48 : 0 };
+}
+
+/* ---------- marks (this browser only) ---------- */
+const marksOf = (e) => { try { return JSON.parse(localStorage.getItem("tkb.m." + e.path) || "[]"); } catch { return e._m || []; } };
+function setMarks(e, m) { e._m = m; try { localStorage.setItem("tkb.m." + e.path, JSON.stringify(m)); } catch {} }
+const curMarks = () => (cur ? (cur.entry._m ?? (cur.entry._m = marksOf(cur.entry))) : []);
+
+/* ---------- audio ---------- */
+let ac = null, src = null;
+function actx() { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === "suspended") ac.resume(); return ac; }
+function stop() { if (src) { try { src.stop(); } catch {} src = null; } play = null; draw(); }
+function playRange(a, b) {
+  if (!cur) return;
+  stop();
+  const c = actx();
+  if (!cur.buf) {
+    const bf = c.createBuffer(2, cur.n, SR), l = bf.getChannelData(0), r = bf.getChannelData(1);
+    for (let i = 0; i < cur.n; i++) { l[i] = cur.L[i] / 32768; r[i] = cur.R[i] / 32768; }
+    cur.buf = bf;
+  }
+  const s = c.createBufferSource();
+  s.buffer = cur.buf; s.connect(c.destination);
+  a = Math.max(0, a); b = Math.min(cur.n, b);
+  s.start(0, a / SR, Math.max(1, b - a) / SR);
+  src = s; play = { a, b, t0: c.currentTime };
+  s.onended = () => { if (src === s) { src = null; play = null; draw(); } };
+  const tick = () => { if (play && src === s) { draw(); requestAnimationFrame(tick); } };
+  requestAnimationFrame(tick);
+}
+function sliceAt(cuts, f) {
+  let a = 0, b = cur.n;
+  for (const c of cuts) { if (c <= f) a = c; else { b = c; break; } }
+  return [a, b];
+}
+
+/* ---------- loading ---------- */
+function setSample(entry, d) {
+  cur = { entry, ...d };
+  P.liveWant = 64;   /* (a new sample: every slice) */
+  PL.set(d.L.subarray(0, d.n)); PR.set(d.R.subarray(0, d.n));
+  view = { a: 0, b: d.n };
+  stop();
+  analyse();
+  renderFiles();
+}
+/* a 48 kHz WAV, read here: the exact samples (16-bit as they are; 24-bit and float rounded to 16, as an
+   import would). null for anything else, which the browser decodes */
+function readWav(buf) {
+  const d = new DataView(buf);
+  if (d.byteLength < 12 || d.getUint32(0) !== 0x52494646 || d.getUint32(8) !== 0x57415645) return null;
+  let o = 12, fmt = null, data = null;
+  while (o + 8 <= d.byteLength) {
+    const id = d.getUint32(o), len = d.getUint32(o + 4, true);
+    if (id === 0x666d7420) { fmt = { tag: d.getUint16(o + 8, true), ch: d.getUint16(o + 10, true), rate: d.getUint32(o + 12, true), bits: d.getUint16(o + 22, true) };
+      if (fmt.tag === 0xfffe && len >= 26) fmt.tag = d.getUint16(o + 32, true); }
+    if (id === 0x64617461) { data = { o: o + 8, len: Math.min(len, d.byteLength - o - 8) }; break; }
+    o += 8 + len + (len & 1);
+  }
+  if (!fmt || !data || fmt.rate !== SR || fmt.ch < 1) return null;
+  const bps = fmt.bits / 8, rd = fmt.tag === 1 && fmt.bits === 16 ? (a) => d.getInt16(a, true)
+    : fmt.tag === 1 && fmt.bits === 24 ? (a) => Math.round(((d.getUint8(a) | d.getUint8(a + 1) << 8 | d.getInt8(a + 2) << 16)) / 256)
+    : fmt.tag === 3 && fmt.bits === 32 ? (a) => Math.round(d.getFloat32(a, true) * 32768) : null;
+  if (!rd) return null;
+  const fr = Math.floor(data.len / (bps * fmt.ch)), n = Math.min(fr, MAXN), st = fmt.ch > 1;
+  const L = new Int16Array(n), R = st ? new Int16Array(n) : L, cl = (v) => (v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+  for (let i = 0, a = data.o; i < n; i++, a += bps * fmt.ch) { L[i] = cl(rd(a)); if (st) R[i] = cl(rd(a + bps)); }
+  return { n, stereo: st, L, R, buf: null, cut: fr > n };
+}
+let dctx = null;
+async function decode(entry) {
+  if (entry.synth) return entry.synth;
+  if (cache.has(entry.path)) return cache.get(entry.path);
+  const ab = await entry.file.arrayBuffer(), w = readWav(ab);
+  if (w) { cache.set(entry.path, w); if (cache.size > 6) cache.delete(cache.keys().next().value); return w; }
+  if (!dctx) { try { dctx = new AudioContext({ sampleRate: SR }); } catch { dctx = new AudioContext(); } }
+  const b = await dctx.decodeAudioData(ab);
+  if (b.sampleRate !== SR) throw new Error(`it decodes at ${b.sampleRate} Hz; convert it to 48 kHz`);
+  const n = Math.min(b.length, MAXN), toI = (x) => { const o = new Int16Array(n); for (let i = 0; i < n; i++) { const v = Math.round(x[i] * 32768); o[i] = v > 32767 ? 32767 : v < -32768 ? -32768 : v; } return o; };
+  const L = toI(b.getChannelData(0)), st = b.numberOfChannels > 1;
+  const d = { n, stereo: st, L, R: st ? toI(b.getChannelData(1)) : L, buf: n === b.length ? b : null, cut: b.length > n };
+  cache.set(entry.path, d);
+  if (cache.size > 6) cache.delete(cache.keys().next().value);
+  return d;
+}
+async function open(entry) {
+  $("#now").textContent = `Decoding ${entry.name}…`;
+  try { setSample(entry, await decode(entry)); }
+  catch (e) { $("#now").textContent = `${entry.name} could not be decoded (${e.message || e}). Try a WAV, AIFF or FLAC file.`; }
+}
+function addFiles(list) {
+  const seen = new Set(files.map((f) => f.path));
+  for (const f of list) {
+    if (!/\.(wav|aif|aiff|flac|mp3|ogg)$/i.test(f.name)) continue;
+    const path = f.webkitRelativePath || f.name;
+    if (seen.has(path)) continue;
+    const parts = path.split("/");
+    files.push({ name: f.name, path, cat: parts.length > 1 ? parts[parts.length - 2] : "files", file: f });
+  }
+  files.sort((a, b) => (a.cat === "example") - (b.cat === "example") || a.cat.localeCompare(b.cat) || a.name.localeCompare(b.name));
+  renderFiles();
+  if (!cur || cur.entry.synth) { const f = files.find((x) => !x.synth); if (f) open(f); }
+}
+$("#pick-dir").addEventListener("change", (e) => addFiles(e.target.files));
+$("#pick-files").addEventListener("change", (e) => addFiles(e.target.files));
+document.addEventListener("dragover", (e) => e.preventDefault());
+document.addEventListener("drop", (e) => { e.preventDefault(); if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files); });
+
+/* an example to start from: two bars at 120 BPM (kick, snare, hats) over a slow pad swell */
+function synth() {
+  const n = SR * 4, L = new Int16Array(n), R = new Int16Array(n);
+  let s = 7; const rnd = () => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296) * 2 - 1;
+  const fl = new Float32Array(n), fr = new Float32Array(n), beat = SR / 2;
+  for (let b = 0; b < 8; b++) {
+    const t0 = b * beat;
+    let ph = 0;
+    for (let i = 0; i < SR * 0.4 && t0 + i < n; i++) { const t = i / SR; ph += 2 * Math.PI * (45 + 80 * Math.exp(-t * 30)) / SR; const v = Math.sin(ph) * Math.exp(-t * 7) * 0.7; fl[t0 + i] += v; fr[t0 + i] += v; }
+    if (b % 2 === 1) for (let i = 0; i < SR * 0.25 && t0 + i < n; i++) { const t = i / SR, v = (rnd() * 0.5 + Math.sin(2 * Math.PI * 190 * t) * 0.3) * Math.exp(-t * 18) * 0.6; fl[t0 + i] += v; fr[t0 + i] += v * 0.9; }
+  }
+  let hp = 0;
+  for (let h = 0; h < 16; h++) { const t0 = h * beat / 2 + (h % 2 ? 900 : 0); for (let i = 0; i < SR * 0.06 && t0 + i < n; i++) { const w = rnd(), v = (w - hp) * Math.exp(-i / SR * 70) * 0.18; hp = w; fl[t0 + i] += v * 0.7; fr[t0 + i] += v; } }
+  for (let i = 0; i < n; i++) { const t = i / SR, sw = Math.sin(Math.PI * t / 4) ** 2 * 0.08;
+    let a = 0, b = 0; for (const f of [110, 164.8, 220, 277.2]) { a += Math.sin(2 * Math.PI * f * t); b += Math.sin(2 * Math.PI * f * 1.003 * t); }
+    fl[i] += a * sw; fr[i] += b * sw; }
+  for (let i = 0; i < n; i++) { L[i] = Math.max(-32768, Math.min(32767, Math.round(fl[i] * 26000))); R[i] = Math.max(-32768, Math.min(32767, Math.round(fr[i] * 26000))); }
+  return { n, stereo: true, L, R, buf: null };
+}
+/* and one with almost no transients: a slow noisy pad, soft plucks at loose times */
+function synthPad() {
+  const n = SR * 6, fl = new Float32Array(n), fr = new Float32Array(n);
+  let s = 11; const rnd = () => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296) * 2 - 1;
+  let lpL = 0, lpR = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR, sw = 0.5 - 0.5 * Math.cos(2 * Math.PI * t / 6), c = 0.02 + 0.03 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / 2.3));
+    lpL += c * (rnd() - lpL); lpR += c * (rnd() - lpR);
+    let a = 0; for (const f of [73.4, 110, 146.8, 185]) a += Math.sin(2 * Math.PI * f * t + Math.sin(t * 0.7) * 2);
+    fl[i] = (lpL * 1.6 + a * 0.05) * sw; fr[i] = (lpR * 1.6 + a * 0.05) * sw;
+  }
+  for (const [t0, f, v] of [[0.62, 587.3, 0.35], [1.71, 440, 0.25], [2.18, 659.3, 0.3], [3.47, 493.9, 0.22], [4.4, 740, 0.28], [5.02, 587.3, 0.18]]) {
+    const i0 = Math.round(t0 * SR);
+    for (let i = 0; i < SR * 0.9 && i0 + i < n; i++) { const t = i / SR, e = Math.min(1, t / 0.004) * Math.exp(-t * 4.5), y = v * e * (Math.sin(2 * Math.PI * f * t) + 0.3 * Math.sin(4 * Math.PI * f * t)); fl[i0 + i] += y * 0.8; fr[i0 + i] += y; }
+  }
+  const L = new Int16Array(n), R = new Int16Array(n);
+  for (let i = 0; i < n; i++) { L[i] = Math.max(-32768, Math.min(32767, Math.round(fl[i] * 22000))); R[i] = Math.max(-32768, Math.min(32767, Math.round(fr[i] * 22000))); }
+  return { n, stereo: true, L, R, buf: null };
+}
+files.push({ name: "Example: drum loop", path: "example", cat: "example", synth: synth() });
+files.push({ name: "Example: pad with soft plucks", path: "example-pad", cat: "example", synth: synthPad() });
+
+/* scan every file with the current constants: peaks a second, and the marks' scores */
+$("#scan").addEventListener("click", async () => {
+  const btn = $("#scan"), keep = cur;
+  btn.disabled = true;
+  for (let i = 0; i < files.length; i++) {
+    const e = files[i];
+    btn.textContent = `Scanning ${i + 1}/${files.length}`;
+    try {
+      const d = await decode(e);
+      PL.set(d.L.subarray(0, d.n)); PR.set(d.R.subarray(0, d.n));
+      raw.forEach((v, k) => X.tw_set(k, v));
+      const c = X.tw_analyze(d.n, d.stereo ? 1 : 0);
+      const m = marksOf(e);
+      const f1 = m.length ? score(outs(X.tw_grid(1, P.n, seed)), m) : null;
+      e.stats = { pps: c / (d.n / SR), c, full: c >= MAXEV, env: f1 };
+    } catch { e.stats = { err: true }; }
+    if (i % 4 === 3) { renderFiles(); await new Promise((r) => setTimeout(r)); }
+  }
+  btn.textContent = "Scan all"; btn.disabled = false;
+  if (keep) setSample(keep.entry, keep); else renderFiles();
+});
+
+/* ---------- drawing ---------- */
+const cv = $("#cv"), g = cv.getContext("2d");
+let W = 0, H = 0;
+const LANE_H = 24, RULER = 16;
+const layout = () => { const lb = LANE_H * LANES.length; const rest = H - lb - RULER; return { wy: RULER, wh: Math.round(rest * 0.6), ey: RULER + Math.round(rest * 0.6), eh: rest - Math.round(rest * 0.6), ly: H - lb }; };
+function resize() {
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  W = r.width; H = r.height; cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); draw();
+}
+new ResizeObserver(resize).observe($("#stage"));
+const xf = (f) => (f - view.a) / (view.b - view.a) * W;
+const fx = (x) => view.a + x / W * (view.b - view.a);
+let css;
+const col = (v) => css.getPropertyValue(v).trim();
+
+/* the waveform, the ruler, the envelopes and the peaks: drawn again only when the view, the size, the
+   analysis or the theme change (a frame of the play head only blits it) */
+const base = document.createElement("canvas"), gbase = base.getContext("2d");
+let baseKey = "";
+function paintBase() {
+  const dpr = window.devicePixelRatio || 1, g = gbase;
+  if (base.width !== cv.width || base.height !== cv.height) { base.width = cv.width; base.height = cv.height; }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const L = layout(), spp = (view.b - view.a) / W;
+  g.font = `11px ${col("--f-mono")}`;
+  /* the ruler: seconds */
+  g.fillStyle = col("--dim"); g.strokeStyle = col("--line"); g.lineWidth = 1;
+  const span = (view.b - view.a) / SR, steps = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 60];
+  const st = steps.find((s) => span / s < W / 70) || 60;
+  g.beginPath();
+  for (let t = Math.ceil(view.a / SR / st) * st; t * SR < view.b; t += st) { const x = Math.round(xf(t * SR)) + 0.5; g.moveTo(x, 0); g.lineTo(x, RULER - 4); g.fillText(st < 1 ? `${(t * 1000).toFixed(0)} ms` : `${t.toFixed(st < 1 ? 1 : 0)} s`, x + 3, 10); }
+  g.stroke();
+  g.beginPath(); g.moveTo(0, L.ey + 0.5); g.lineTo(W, L.ey + 0.5); g.moveTo(0, L.ly + 0.5); g.lineTo(W, L.ly + 0.5); g.stroke();
+
+  /* the waveform: the mono sum, as the detector hears it */
+  const mid = L.wy + L.wh / 2, amp = L.wh / 2 - 4;
+  g.fillStyle = col("--wave"); g.strokeStyle = col("--wave");
+  if (spp > 1) {
+    for (let x = 0; x < W; x++) {
+      const i0 = Math.max(0, Math.floor(view.a + x * spp)), i1 = Math.min(cur.n, Math.floor(view.a + (x + 1) * spp) + 1);
+      let lo = 1, hi = -1;
+      for (let i = i0; i < i1; i++) { const v = (cur.L[i] + cur.R[i]) / 65536; if (v < lo) lo = v; if (v > hi) hi = v; }
+      if (hi >= lo) g.fillRect(x, mid - hi * amp, 1, Math.max(1, (hi - lo) * amp));
+    }
+  } else {
+    g.beginPath();
+    for (let i = Math.max(0, Math.floor(view.a)); i <= Math.min(cur.n - 1, Math.ceil(view.b)); i++) { const x = xf(i), y = mid - (cur.L[i] + cur.R[i]) / 65536 * amp; i === Math.floor(view.a) ? g.moveTo(x, y) : g.lineTo(x, y); }
+    g.stroke();
+  }
+
+  /* the envelope (log), the floor; the peaks at their tops */
+  const off = 2 + raw[K.delay], nb = envT.length;
+  let top = -30;
+  for (let b = 0; b < nb; b++) if (envT[b] > 0) top = Math.max(top, Math.log10(envT[b]));
+  top = Math.ceil(top * 2) / 2;
+  const dec = 7, ly = (v) => { const l = v > 0 ? Math.log10(v) : top - dec; return L.ey + 3 + (top - Math.min(top, Math.max(top - dec, l))) / dec * (L.eh - 6); };
+  const trace = (arr, colr, width, mode) => {
+    g.strokeStyle = col(colr); g.lineWidth = width; g.beginPath();
+    for (let x = 0; x <= W; x++) {
+      const b0 = Math.max(0, Math.floor((view.a + x * spp + off) / DEC)), b1 = Math.min(nb - 1, Math.max(b0, Math.floor((view.a + (x + 1) * spp + off) / DEC)));
+      let v = mode ? arr[b1] : 0; if (!mode) for (let b = b0; b <= b1; b++) if (arr[b] > v) v = arr[b];
+      x ? g.lineTo(x, ly(v)) : g.moveTo(x, ly(v));
+    }
+    g.stroke();
+  };
+  trace(envT, "--env", 1.25, 0);
+  g.setLineDash([3, 4]); g.strokeStyle = col("--dim"); g.lineWidth = 1;
+  const fy = Math.round(ly(raw[K.floor])) + 0.5; g.beginPath(); g.moveTo(0, fy); g.lineTo(W, fy); g.stroke(); g.setLineDash([]);
+  g.fillStyle = col("--dim"); g.fillText(`floor · log, ${dec} decades`, 4, L.ey + L.eh - 4);
+  for (const e of ev) {
+    const x = xf(e.peak); if (x < -2 || x > W + 2) continue;
+    g.fillStyle = col("--l-peaks");
+    g.beginPath(); g.arc(x, ly(e.value), 2.5, 0, 7); g.fill();
+  }
+
+  baseKey = `${view.a}|${view.b}|${W}|${H}|${anaVer}|${themeVer}|${cur.n}`;
+}
+
+function draw() {
+  if (!W) return;
+  css = getComputedStyle(document.documentElement);
+  g.fillStyle = col("--panel"); g.fillRect(0, 0, W, H);
+  if (!cur) return;
+  const L = layout(), focusLane = lanes.find((l) => l.id === focus);
+  g.font = `11px ${col("--f-mono")}`;
+
+  /* the focus lane's slices: alternate shading, numbered */
+  if (focusLane) {
+    const cs = focusLane.cuts;
+    for (let i = 0; i < cs.length; i++) {
+      const a = xf(cs[i]), b = xf(i + 1 < cs.length ? cs[i + 1] : cur.n);
+      if (b < 0 || a > W) continue;
+      if (i % 2) { g.fillStyle = col("--hi"); g.fillRect(a, L.wy, b - a, L.wh + L.eh); }
+      if (b - a > 18) { g.fillStyle = col(focusLane.c); g.fillText(String(i + 1), Math.max(a, 0) + 3, L.wy + 12); }
+    }
+  }
+  if (baseKey !== `${view.a}|${view.b}|${W}|${H}|${anaVer}|${themeVer}|${cur.n}`) paintBase();
+  g.drawImage(base, 0, 0, W, H);
+
+  /* the marks: what a person heard */
+  const marks = curMarks();
+  g.strokeStyle = col("--mark"); g.lineWidth = 1; g.setLineDash([2, 3]);
+  g.beginPath(); for (const m of marks) { const x = Math.round(xf(m)) + 0.5; if (x >= 0 && x <= W) { g.moveTo(x, RULER); g.lineTo(x, H); } } g.stroke(); g.setLineDash([]);
+  g.fillStyle = col("--mark"); for (const m of marks) { const x = xf(m); if (x >= 0 && x <= W) { g.beginPath(); g.moveTo(x, RULER); g.lineTo(x + 6, RULER + 3); g.lineTo(x, RULER + 6); g.fill(); } }
+
+  /* the focus lane's cuts through the waveform */
+  if (focusLane) {
+    g.strokeStyle = col(focusLane.c); g.lineWidth = 1;
+    g.beginPath(); for (const c of focusLane.cuts) { const x = Math.round(xf(c)) + 0.5; if (x >= 0 && x <= W) { g.moveTo(x, L.wy); g.lineTo(x, L.wy + L.wh); } } g.stroke();
+  }
+
+  /* the lanes: each trig as bright and as wide as its transient is high (log, against the sample's highest);
+     the start, no transient, thin and dim */
+  let peakTop = 1e-30; const height = new Map();
+  for (const e of ev) { if (e.value > peakTop) peakTop = e.value; height.set(e.pos, e.value); }
+  lanes.forEach((l, k) => {
+    const y = L.ly + k * LANE_H;
+    if (l.id === focus) { g.fillStyle = col("--hi"); g.fillRect(0, y, W, LANE_H); }
+    g.strokeStyle = col(l.c);
+    for (const c of l.cuts) {
+      const x = Math.round(xf(c)) + 0.5; if (x < -2 || x > W + 2) continue;
+      const v = height.get(c), s = v ? Math.max(0, Math.min(1, 1 + Math.log10(v / peakTop) / 3)) : 0;
+      g.globalAlpha = v ? 0.25 + 0.75 * s : 0.35; g.lineWidth = v ? 1.5 + 2.5 * s : 1;
+      g.beginPath(); g.moveTo(x, y + 3); g.lineTo(x, y + LANE_H - 3); g.stroke();
+    }
+    g.globalAlpha = 1;
+    g.font = `600 10px ${col("--f-display")}`; const tw = g.measureText(l.name).width;
+    g.fillStyle = col("--panel"); g.globalAlpha = 0.85; g.fillRect(2, y + 4, tw + 8, 13); g.globalAlpha = 1;
+    g.fillStyle = col(l.c); g.fillText(l.name, 6, y + 14);
+  });
+
+  /* the play head, and the hover readout's line */
+  if (play && ac) {
+    const f = play.a + (ac.currentTime - play.t0) * SR;
+    if (f <= play.b) { const x = Math.round(xf(f)) + 0.5; g.strokeStyle = col("--play"); g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, RULER); g.lineTo(x, H); g.stroke(); }
+    g.fillStyle = col("--accent"); g.globalAlpha = 0.18; g.fillRect(xf(play.a), RULER, xf(play.b) - xf(play.a), L.ly - RULER); g.globalAlpha = 1;
+  }
+}
+
+/* ---------- interaction ---------- */
+let drag = null;
+const laneAtY = (y) => { const L = layout(); return y >= L.ly ? LANES[Math.min(LANES.length - 1, Math.floor((y - L.ly) / LANE_H))] : null; };
+function nearestPeak(x) {
+  let best = null, bd = 7;
+  for (const e of ev) { const d = Math.abs(xf(e.peak) - x); if (d < bd) { bd = d; best = e; } }
+  return best;
+}
+function readout(x) {
+  if (!cur) return;
+  const f = Math.round(fx(x)), e = nearestPeak(x);
+  let s = `${f} · ${(f / SR).toFixed(4)} s`;
+  if (e) s += ` · peak at ${e.peak}: height ${e.value.toExponential(2)}, cut ${e.pos} (${((e.pos - e.peak) / 48).toFixed(1)} ms from the top)`;
+  $("#status").textContent = s;
+}
+cv.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, a: view.a, b: view.b, moved: false }; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener("pointermove", (e) => {
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left;
+  hover = fx(x); readout(x);
+  if (!drag || !cur) return;
+  const dx = e.clientX - drag.x;
+  if (Math.abs(dx) > 3) drag.moved = true;
+  if (drag.moved) { const span = drag.b - drag.a, d = -dx / W * span; let a = Math.max(0, Math.min(cur.n - span, drag.a + d)); view = { a, b: a + span }; draw(); }
+});
+cv.addEventListener("pointerup", (e) => {
+  const d = drag; drag = null;
+  if (!d || d.moved || !cur) return;
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, f = fx(x);
+  const lane = laneAtY(y);
+  if (lane) { focus = lane.id; renderLanes(); }
+  if (!lane && (e.shiftKey || e.altKey)) { toggleMark(f); return; }
+  const l = lanes.find((q) => q.id === focus);
+  const [a, b] = sliceAt(l ? l.cuts : [], f);
+  playRange(a, b);
+});
+cv.addEventListener("pointerleave", () => { hover = null; });
+cv.addEventListener("wheel", (e) => {
+  if (!cur) return; e.preventDefault();
+  const r = cv.getBoundingClientRect(), f = fx(e.clientX - r.left), k = Math.pow(1.0015, e.deltaY + e.deltaX * 0);
+  let span = Math.min(cur.n, Math.max(256, (view.b - view.a) * k));
+  if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) { span = view.b - view.a; const a = Math.max(0, Math.min(cur.n - span, view.a + e.deltaX / W * span)); view = { a, b: a + span }; draw(); return; }
+  let a = f - (f - view.a) / (view.b - view.a) * span; a = Math.max(0, Math.min(cur.n - span, a));
+  view = { a, b: a + span }; draw();
+}, { passive: false });
+cv.addEventListener("dblclick", () => { if (cur) { view = { a: 0, b: cur.n }; draw(); } });
+function toggleMark(f) {
+  const m = curMarks().slice(), px = (view.b - view.a) / W * 6, i = m.findIndex((q) => Math.abs(q - f) < px);
+  if (i >= 0) m.splice(i, 1); else m.push(Math.round(f));
+  m.sort((a, b) => a - b); setMarks(cur.entry, m); renderLanes(); draw();
+}
+document.addEventListener("keydown", (e) => {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== "range") return;
+  if (e.key === " " && e.target.tagName !== "BUTTON") { e.preventDefault(); play ? stop() : playRange(view.a, view.b); }
+  else if (e.key === "m" && hover != null && cur) toggleMark(hover);
+  else if (e.key === "r") reroll();
+  else if (e.key === "0" && cur) { view = { a: 0, b: cur.n }; draw(); }
+  else if (e.key === "Escape") stop();
+});
+$("#playall").addEventListener("click", () => (play ? stop() : playRange(view.a, view.b)));
+$("#zoomout").addEventListener("click", () => { if (cur) { view = { a: 0, b: cur.n }; draw(); } });
+function reroll() { seed = bump(seed); pick(); }
+$("#reroll").addEventListener("click", reroll);
+
+/* ---------- panels ---------- */
+function renderNow() {
+  if (!cur) return;
+  const e = cur.entry, secs = cur.n / SR;
+  $("#now").innerHTML = "";
+  const b = document.createElement("b"); b.textContent = e.name; $("#now").append(b,
+    ` · ${secs.toFixed(2)} s · ${cur.stereo ? "stereo" : "mono"}${cur.cut ? " (first 100 s)" : ""} · ${ev.length} peaks (${(ev.length / secs).toFixed(1)} a second)${ev.length >= MAXEV ? " · the peak table is full" : ""} · analysed in ${ms.toFixed(0)} ms`);
+}
+function renderLanes() {
+  const tb = $("#lanes"), marks = curMarks();
+  tb.innerHTML = "";
+  for (const l of lanes) {
+    const tr = document.createElement("tr"), s = score(l.cuts, marks);
+    if (l.id === focus) tr.className = "on";
+    tr.tabIndex = 0;
+    const cells = [l.name, String(l.cuts.length), s ? `${s.hit}/${marks.length}` : "–", s ? `${(s.p * 100).toFixed(0)} %` : "–", s ? `${(s.r * 100).toFixed(0)} %` : "–", s && s.hit ? `${s.off >= 0 ? "+" : ""}${s.off.toFixed(1)} ms` : "–", l.d];
+    cells.forEach((c, i) => { const td = document.createElement("td"); td.textContent = c; if (i === 0) { td.className = "ln"; td.style.setProperty("--c", `var(${l.c})`); } if (i === 6) td.className = "d"; tr.append(td); });
+    const go = () => { focus = l.id; renderLanes(); draw(); };
+    tr.addEventListener("click", go); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    tb.append(tr);
+  }
+  if (!marks.length) {
+    const tr = document.createElement("tr"), td = document.createElement("td");
+    td.colSpan = 7; td.className = "d"; td.style.cursor = "default";
+    td.textContent = "Shift-click the waveform (or press M) where you hear a transient: the lanes are then scored against your marks, within the hit tolerance.";
+    tr.append(td); tb.append(tr);
+  }
+}
+function renderFiles() {
+  const box = $("#files"); box.innerHTML = "";
+  const cats = [...new Set(files.map((f) => f.cat))];
+  for (const c of cats) {
+    const fs = files.filter((f) => f.cat === c), st = fs.filter((f) => f.stats && !f.stats.err);
+    const div = document.createElement("div"); div.className = "cat";
+    const h = document.createElement("h2"); h.textContent = c;
+    if (st.length) { const i = document.createElement("i"); i.textContent = `${(st.reduce((s, f) => s + f.stats.pps, 0) / st.length).toFixed(1)}/s`; i.title = "peaks a second, the files' mean"; h.append(i); }
+    div.append(h);
+    for (const f of fs) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "file" + (cur && cur.entry === f ? " on" : "");
+      const s = document.createElement("span"); s.textContent = f.name.replace(/^[a-z0-9-]+__/, ""); s.title = f.path;
+      const i = document.createElement("i");
+      if (f.stats) i.textContent = f.stats.err ? "err" : `${f.stats.pps.toFixed(1)}${f.stats.full ? "!" : ""}${f.stats.env ? ` ${Math.round(f.stats.env.r * 100)}%` : ""}`;
+      b.append(s, i); b.addEventListener("click", () => open(f)); div.append(b);
+    }
+    box.append(div);
+  }
+  if (files.every((f) => f.synth)) {
+    const p = document.createElement("p"); p.className = "hint";
+    p.innerHTML = "Open a folder of samples or drop audio files here. Nothing is uploaded: the detector runs in this page.<br><br><kbd>click</kbd> plays a slice of the selected lane · <kbd>shift</kbd>-click or <kbd>M</kbd> marks a hit · wheel zooms · drag pans · <kbd>Space</kbd> plays the view · <kbd>R</kbd> rerolls RAND";
+    box.append(p);
+  }
+}
+
+/* the constants' sliders */
+const pos = (c, v) => (c.log ? Math.log(v / c.min) / Math.log(c.max / c.min) * 1000 : v);
+const val = (c, p) => (c.log ? c.min * Math.pow(c.max / c.min, p / 1000) : p);
+let pend = 0;
+const schedule = (re) => { pend |= re ? 2 : 1; requestAnimationFrame(() => { const p = pend; pend = 0; if (!p) return; if (p & 2) { applyAuto(); sync(); analyse(); } else if (p & 1) pick(); renderSnippet(); }); };
+const ORDER = ["hyst", "fc", "gap"];
+for (const c of ORDER.map((id) => CTRL.find((q) => q.id === id)).filter((c) => c.grp === "count")) {
+  const row = document.createElement("div"); row.className = "row"; row.id = "r-" + c.id;
+  row.innerHTML = `<label for="p-${c.id}"></label><output id="o-${c.id}"></output><input type="range" id="p-${c.id}"><button class="rst" type="button" title="Back to the default">↺</button>`;
+  if (c.auto) {
+    const a = document.createElement("label"); a.className = "auto";
+    a.innerHTML = `<input type="checkbox" id="a-${c.id}" checked> follows the follower`;
+    a.querySelector("input").addEventListener("change", (e) => { autoDelay = e.target.checked; inp.disabled = autoDelay; schedule(true); });
+    row.append(a);
+  }
+  row.querySelector("label").textContent = c.label;
+  const inp = row.querySelector("input[type=range]");
+  if (c.auto) inp.disabled = true;
+  if (c.log) { inp.min = 0; inp.max = 1000; inp.step = 1; } else { inp.min = c.min; inp.max = c.max; inp.step = c.step; }
+  inp.addEventListener("input", () => { c.set(val(c, +inp.value)); sync(); schedule(!PICK_ONLY.has(c.ks[0])); });
+  row.querySelector(".rst").addEventListener("click", () => { for (const k of c.ks) raw[k] = DEF[k]; if (c.auto) { autoDelay = true; $("#a-" + c.id).checked = true; inp.disabled = true; } sync(); schedule(!PICK_ONLY.has(c.ks[0])); });
+  $("#g-" + c.grp).append(row);
+}
+function sync() {
+  for (const c of CTRL) {
+    if (!$("#r-" + c.id)) continue;
+    const v = c.get();
+    $("#p-" + c.id).value = pos(c, v);
+    $("#o-" + c.id).textContent = c.fmt(v);
+    $("#r-" + c.id).classList.toggle("mod", c.ks.some((k) => !same(raw[k], DEF[k])));
+  }
+
+}
+/* every transient, at most 64 (tk_grid_max: GRID and RAND count the start too); Slices up to it */
+function limitSlices() {
+  P.nMax = P.n = Math.max(1, Math.min(64, Math.max(X.tw_grid_max(1), X.tw_grid_max(2), X.tw_grid_max(3))));
+  $("#o-n").textContent = `${P.n} transients`;
+  limitLive();
+}
+function limitLive() {   /* Slices: 1 .. N forwards, -1 .. -(N - 1) the order reversed (no 0: 1 and -1 meet) */
+  P.live = Math.max(-(P.n - 1), Math.min(P.liveWant, P.n)) || 1;
+  const inp = $("#p-live");
+  inp.min = -(P.n - 1); inp.max = P.n; inp.value = P.live;
+  $("#o-live").textContent = thinText();
+}
+const thinText = () => (P.live < 0 ? `${P.live} (reversed) of ${P.n}` : `${P.live} of ${P.n}`);
+const pickers = [["live", (v) => { P.liveWant = v || 1; P.live = Math.max(-(P.n - 1), Math.min(P.liveWant, P.n)); }, () => thinText()],
+  ["tol", (v) => (P.tol = v), (v) => `±${v} ms`]];
+for (const [id, set, fmt] of pickers) {
+  const inp = $("#p-" + id);
+  const up = () => { set(+inp.value); $("#o-" + id).textContent = fmt(+inp.value); };
+  up();
+  inp.addEventListener("input", () => { up(); if (id === "tol") { renderLanes(); } else schedule(false); });
+}
+for (const r of document.querySelectorAll('input[name="onset"]')) r.addEventListener("change", (e) => { if (e.target.checked) { raw[K.peak] = +e.target.value; schedule(true); } });
+$("#resetall").addEventListener("click", () => { raw = DEF.slice(); $("#on-walk").checked = true; sync(); schedule(true); });
+
+function fnum(k, v) {   /* the shortest decimal that is the same float */
+  if (k >= K.delay) return String(Math.round(v));
+  const f = Math.fround(v);
+  for (let p = 1; p <= 9; p++) { const t = parseFloat(f.toPrecision(p)); if (Math.fround(t) === f) return `${t}f`; }
+  return `${f}f`;
+}
+function snippet() {
+  const s = svf(raw[0], raw[1]);
+  return NAMES.map((n, k) => {
+    const changed = !same(raw[k], DEF[k]);
+    let line = `#define ${n.padEnd(15)} ${fnum(k, raw[k])}`;
+    if (changed) line = line.padEnd(42) + ` /* default: ${fnum(k, DEF[k])} */`;
+    if (k === 0) line = line.padEnd(42) + ` /* ${s.fc.toFixed(1)} Hz, Q ${s.q.toFixed(2)} */`;
+    return line;
+  }).join("\n");
+}
+function renderSnippet() { $("#snippet").textContent = snippet(); }
+async function copy(text, btn) {
+  const was = btn.textContent;
+  try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
+  catch { $("#snippet").textContent = text; const r = document.createRange(); r.selectNodeContents($("#snippet")); getSelection().removeAllRanges(); getSelection().addRange(r); btn.textContent = "Selected: copy it"; }
+  setTimeout(() => (btn.textContent = was), 1400);
+}
+$("#copy").addEventListener("click", (e) => copy(snippet(), e.currentTarget));
+$("#copymarks").addEventListener("click", (e) => {
+  const all = {};
+  for (const f of files) { const m = f === cur?.entry ? curMarks() : marksOf(f); if (m.length) all[f.path] = m; }
+  copy(JSON.stringify(all), e.currentTarget);
+});
+
+const retheme = () => { themeVer++; draw(); };
+new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
+sync(); renderSnippet();
+setSample(files[0], files[0].synth);
+</script>
+</body>
+</html>
